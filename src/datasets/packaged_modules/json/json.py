@@ -52,9 +52,13 @@ class JsonConfig(datasets.BuilderConfig):
     newlines_in_values: Optional[bool] = None
     on_mixed_types: Optional[Literal["use_json"]] = "use_json"
     parse_agent_traces: bool = True
+    return_file_name: bool = False
 
     def __post_init__(self):
         super().__post_init__()
+        if self.return_file_name and self.features is not None and "file_name" not in self.features:
+            self.features = self.features.copy()
+            self.features["file_name"] = datasets.Value("string")
 
 
 class Json(datasets.ArrowBasedBuilder):
@@ -70,7 +74,12 @@ class Json(datasets.ArrowBasedBuilder):
             )
         if self.config.newlines_in_values is not None:
             raise ValueError("The JSON loader parameter `newlines_in_values` is no longer supported")
-        return datasets.DatasetInfo(features=self.config.features)
+        features = self.config.features
+        if features is not None and self.config.return_file_name and "file_name" not in features:
+            features = features.copy()
+            features["file_name"] = datasets.Value("string")
+            self.config.features = features
+        return datasets.DatasetInfo(features=features)
 
     def _split_generators(self, dl_manager):
         """We handle string, list and dicts in datafiles"""
@@ -159,6 +168,9 @@ class Json(datasets.ArrowBasedBuilder):
                     if df.columns.tolist() == [0]:
                         df.columns = list(self.config.features) if self.config.features else ["text"]
                     pa_table = pa.Table.from_pandas(df, preserve_index=False)
+                    if self.config.return_file_name:
+                        file_name_col = pa.array([file] * len(pa_table), type=pa.string())
+                        pa_table = pa_table.append_column("file_name", file_name_col)
                     yield Key(shard_idx, 0), self._cast_table(pa_table)
 
                 # If the files are agent traces (one row = one file)
@@ -181,6 +193,9 @@ class Json(datasets.ArrowBasedBuilder):
                             "file_path": [file_path],
                         }
                     )
+                    if self.config.return_file_name:
+                        file_name_col = pa.array([file] * len(pa_table), type=pa.string())
+                        pa_table = pa_table.append_column("file_name", file_name_col)
                     yield Key(shard_idx, 0), self._cast_table(pa_table)
 
                 # If the file has one json object per line
@@ -292,8 +307,14 @@ class Json(datasets.ArrowBasedBuilder):
                                     raise ValueError(
                                         f"Failed to convert pandas DataFrame to Arrow Table from file {file}."
                                     ) from None
+                                if self.config.return_file_name:
+                                    file_name_col = pa.array([file] * len(pa_table), type=pa.string())
+                                    pa_table = pa_table.append_column("file_name", file_name_col)
                                 yield Key(shard_idx, 0), self._cast_table(pa_table)
                                 break
+                            if self.config.return_file_name:
+                                file_name_col = pa.array([file] * len(pa_table), type=pa.string())
+                                pa_table = pa_table.append_column("file_name", file_name_col)
                             yield (
                                 Key(shard_idx, batch_idx),
                                 self._cast_table(pa_table, json_field_paths=json_field_paths),
