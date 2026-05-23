@@ -1564,11 +1564,15 @@ def load_dataset(
             Verification mode determining the checks to run on the downloaded/processed dataset information (checksums/size/splits/...).
 
             <Added version="2.9.1"/>
-        keep_in_memory (`bool`, defaults to `None`):
+       keep_in_memory (`bool`, defaults to `None`):
             Whether to copy the dataset in-memory. If `None`, the dataset
             will not be copied in-memory unless explicitly enabled by setting `datasets.config.IN_MEMORY_MAX_SIZE` to
             nonzero. See more details in the [improve performance](../cache#improve-performance) section.
-        revision ([`Version`] or `str`, *optional*):
+
+            .. warning::
+                Setting ``keep_in_memory=True`` in combination with PyTorch DataLoader multiprocessing (``num_workers > 0``) causes severe memory bloat. Python's copy-on-write semantics will duplicate the fully materialized dataset across all worker processes. For multi-GPU training on large datasets, rely on the default memory-mapping (``keep_in_memory=False``) or utilize IterableDatasets via ``streaming=True``.
+
+     revision ([`Version`] or `str`, *optional*):
             Version of the dataset to load.
             As datasets have their own git repository on the Datasets Hub, the default version "main" corresponds to their "main" branch.
             You can specify a different version than the default "main" by using a commit SHA or a git tag of the dataset repository.
