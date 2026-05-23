@@ -20,19 +20,21 @@ To get PyTorch tensors instead, you can set the format of the dataset to `pytorc
 >>> ds[:2]
 {'data': tensor([[1, 2],
          [3, 4]])}
+
 ```
 
 > [!TIP]
 > A [`Dataset`] object is a wrapper of an Arrow table, which allows fast zero-copy reads from arrays in the dataset to PyTorch tensors.
 
-
 To load the data as tensors on a GPU, specify the `device` argument:
+
 ```py
 >>> import torch
 >>> device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 >>> ds = ds.with_format("torch", device=device)
 >>> ds[0]
 {'data': tensor([1, 2], device='cuda:0')}
+
 ```
 
 ### N-dimensional arrays
@@ -47,6 +49,7 @@ If your dataset consists of N-dimensional arrays, you will see that by default t
 >>> ds[0]
 {'data': tensor([[1, 2],
          [3, 4]])}
+
 ```
 
 ```py
@@ -56,6 +59,7 @@ If your dataset consists of N-dimensional arrays, you will see that by default t
 >>> ds = ds.with_format("torch")
 >>> ds[0]
 {'data': [tensor([1, 2]), tensor([3])]}
+
 ```
 
 However this logic often requires slow shape comparisons and data copies.
@@ -73,11 +77,11 @@ To avoid this, you must explicitly use the [`Array`] feature type and specify th
 >>> ds[:2]
 {'data': tensor([[[1, 2],
           [3, 4]],
- 
+
          [[5, 6],
           [7, 8]]])}
-```
 
+```
 
 ### Other feature types
 
@@ -91,6 +95,7 @@ To avoid this, you must explicitly use the [`Array`] feature type and specify th
 >>> ds = ds.with_format("torch")  
 >>> ds[:3]
 {'label': tensor([0, 0, 1])}
+
 ```
 
 String and binary objects are unchanged, since PyTorch only supports numbers.
@@ -123,6 +128,7 @@ torch.Size([2, 512, 512, 4])
           ...,
           [255, 255, 255, 255],
           [255, 255, 255, 255]]]], dtype=torch.uint8)}
+
 ```
 
 > [!TIP]
@@ -140,6 +146,7 @@ tensor([ 6.1035e-05,  1.5259e-05,  1.6785e-04,  ..., -1.5259e-05,
         -1.5259e-05,  1.5259e-05])
 >>> ds[0]["audio"]["sampling_rate"]
 tensor(44100)
+
 ```
 
 ## Data loading
@@ -155,11 +162,12 @@ Like `torch.utils.data.Dataset` objects, a [`Dataset`] can be passed directly to
 >>> ds = Dataset.from_dict({"data": data, "label": label}).with_format("torch")
 >>> dataloader = DataLoader(ds, batch_size=4)
 >>> for batch in dataloader:
-...     print(batch)                                                                                            
+...     print(batch)                                                                                                          
 {'data': tensor([0.0047, 0.4979, 0.6726, 0.8105]), 'label': tensor([0, 1, 0, 1])}
 {'data': tensor([0.4832, 0.2723, 0.4259, 0.2224]), 'label': tensor([0, 0, 0, 0])}
 {'data': tensor([0.5837, 0.3444, 0.4658, 0.6417]), 'label': tensor([0, 1, 0, 0])}
 {'data': tensor([0.7022, 0.1225, 0.7228, 0.8259]), 'label': tensor([1, 1, 1, 1])}
+
 ```
 
 ### Optimize data loading
@@ -183,13 +191,13 @@ Reloading the dataset inside a worker doesn't fill up your RAM, since it simply 
 >>> Dataset.from_dict({"data": data}).save_to_disk("my_dataset")
 >>> ds = load_from_disk("my_dataset").with_format("torch")
 >>> dataloader = DataLoader(ds, batch_size=32, num_workers=4)
+
 ```
 
 ### Stream data
 
 Stream a dataset by loading it as an [`IterableDataset`]. This allows you to progressively iterate over a remote dataset without downloading it on disk and or over local data files.
 Learn more about which type of dataset is best for your use case in the [choosing between a regular dataset or an iterable dataset](./about_mapstyle_vs_iterable) guide.
-
 
 An iterable dataset from `datasets` inherits from `torch.utils.data.IterableDataset` so you can pass it to a `torch.utils.data.DataLoader`:
 
@@ -201,6 +209,7 @@ An iterable dataset from `datasets` inherits from `torch.utils.data.IterableData
 >>> Dataset.from_dict({"data": data}).push_to_hub("<username>/my_dataset")  # Upload to the Hugging Face Hub
 >>> my_iterable_dataset = load_dataset("<username>/my_dataset", streaming=True, split="train")
 >>> dataloader = DataLoader(my_iterable_dataset, batch_size=32)
+
 ```
 
 If the dataset is split in several shards (i.e. if the dataset consists of multiple data files), then you can stream in parallel using `num_workers`:
@@ -210,6 +219,7 @@ If the dataset is split in several shards (i.e. if the dataset consists of multi
 >>> my_iterable_dataset.num_shards
 39
 >>> dataloader = DataLoader(my_iterable_dataset, batch_size=32, num_workers=4)
+
 ```
 
 In this case each worker is given a subset of the list of shards to stream from.
@@ -226,6 +236,7 @@ If you need a DataLoader that you can checkpoint and resume in the middle of tra
 >>> state_dict = dataloader.state_dict()
 >>> # and resume later
 >>> dataloader.load_state_dict(state_dict)
+
 ```
 
 This is possible thanks to [`IterableDataset.state_dict`] and [`IterableDataset.load_state_dict`].
@@ -239,6 +250,7 @@ import os
 from datasets.distributed import split_dataset_by_node
 
 ds = split_dataset_by_node(ds, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
+
 ```
 
 This works for both map-style datasets and iterable datasets.
@@ -258,3 +270,7 @@ This can also be combined with a `torch.utils.data.DataLoader` if you want each 
 
 > [!WARNING]
 > If you shuffle your iterable dataset in a distributed setup, make sure to set a fixed `seed` in [`IterableDataset.shuffle`] so the same shuffled list of shards is used on every node to know which shards the node should skip.
+
+### Multi-GPU NCCL Timeouts and Memory Constraints
+
+When loading large datasets across multiple GPUs, avoid `keep_in_memory=True`. It causes worker-level memory duplication. If relying on memory-mapping (default) causes NCCL timeouts due to slow disk I/O, you must either: A) Move cache storage to high-throughput NVMe SSDs, B) Shard the dataset precisely per GPU before instantiation, or C) Switch to `streaming=True`.
